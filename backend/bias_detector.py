@@ -8,9 +8,9 @@ from sentence_transformers import SentenceTransformer, util
 import spacy
 import re
 
-nlp = spacy.load("en_core_web_trf")
-tokenizer = AutoTokenizer.from_pretrained("siebert/sentiment-roberta-large-english")
-model = AutoModelForSequenceClassification.from_pretrained("siebert/sentiment-roberta-large-english")
+nlp = spacy.load("en_core_web_sm")
+tokenizer = AutoTokenizer.from_pretrained("	distilbert-base-uncased-finetuned-sst-2-english")
+model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased-finetuned-sst-2-english")
 sentiment_model = pipeline("sentiment-analysis", model=model, tokenizer=tokenizer, device=-1)
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
 
