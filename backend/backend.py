@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from backend.summarizer import summarize_text
+from summarizer import summarize_text
 from bias_detector import analyze_entity_sentiment
 from flask_cors import CORS
 app = Flask(__name__)
