@@ -3,8 +3,8 @@ from nltk.tokenize import sent_tokenize
 
 MAX_MODEL_TOKENS = 512
 
-model = AutoModelForSeq2SeqLM.from_pretrained("sshleifer/distilbart-cnn-12-6")
-tokenizer = AutoTokenizer.from_pretrained("sshleifer/distilbart-cnn-12-6")
+model = AutoModelForSeq2SeqLM.from_pretrained("facebook/bart-large-cnn")
+tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large-cnn")
 summarizer_pipeline = pipeline(
     "summarization",
     model=model,
