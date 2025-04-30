@@ -1,5 +1,7 @@
 from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 from nltk.tokenize import sent_tokenize
+import nltk
+nltk.download("punkt")
 
 MAX_MODEL_TOKENS = 512
 
