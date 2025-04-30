@@ -4,7 +4,7 @@ import requests
 import streamlit as st
 
 
-API_URL = "https://capstoneproject-xi3r.onrender.com/analyze"
+API_URL = "https://Jack1224-CapstoneBackend.hf.space/analyze"
 
 st.set_page_config(
     page_title="LLM-Powered News Analyzer",
