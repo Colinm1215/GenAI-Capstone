@@ -1,7 +1,12 @@
 from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 from nltk.tokenize import sent_tokenize
 import nltk
-nltk.download("punkt")
+import os
+
+os.environ["NLTK_DATA"] = "/tmp/nltk_data"
+nltk.download("punkt", download_dir="/tmp/nltk_data")
+nltk.download("punkt_tab", download_dir="/tmp/nltk_data")
+nltk.data.path.append("/tmp/nltk_data")
 
 MAX_MODEL_TOKENS = 512
 
