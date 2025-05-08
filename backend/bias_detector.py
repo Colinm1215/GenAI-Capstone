@@ -1,18 +1,19 @@
 import numpy as np
 import pandas as pd
+import torch
 from sklearn.cluster import DBSCAN
 from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
 from nltk.tokenize import sent_tokenize
-from collections import Counter
 from sentence_transformers import SentenceTransformer, util
 import spacy
 import re
 
+device = 0 if torch.cuda.is_available() else -1
 nlp = spacy.load("en_core_web_trf")
 tokenizer = AutoTokenizer.from_pretrained("siebert/sentiment-roberta-large-english")
 model = AutoModelForSequenceClassification.from_pretrained("siebert/sentiment-roberta-large-english")
-sentiment_model = pipeline("sentiment-analysis", model=model, tokenizer=tokenizer, device=-1)
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+sentiment_model = pipeline("sentiment-analysis", model=model, tokenizer=tokenizer, device=device)
+embedding_model = SentenceTransformer("all-MiniLM-L6-v2", device="cuda" if torch.cuda.is_available() else "cpu")
 
 MAX_MODEL_TOKENS = 512
 
@@ -29,6 +30,16 @@ def extract_named_entities(text):
     df['cluster'] = dbscan.fit_predict(X)
     groups = df.groupby(by=['cluster'])['text'].apply(list).to_dict()
     return groups
+
+def get_context_windows(sentences, variants, window_size=1):
+    windows = []
+    for i, s in enumerate(sentences):
+        if any(re.search(rf'\b{re.escape(v)}\b', s, flags=re.IGNORECASE)
+               for v in variants):
+            start = max(0, i - window_size)
+            end   = min(len(sentences), i + window_size + 1)
+            windows.append(" ".join(sentences[start:end]))
+    return windows
 
 def cluster_entities(entities):
     embeddings = embedding_model.encode(entities, convert_to_tensor=True)
@@ -58,47 +69,38 @@ def cluster_entities(entities):
 
 def analyze_entity_sentiment(text):
     entities = extract_named_entities(text)
+    sentences = sent_tokenize(text)
+
+    all_windows = []
+    window_counts = []
+    for variants in entities.values():
+        wins = get_context_windows(sentences, variants, window_size=1)
+        all_windows.extend(wins)
+        window_counts.append((variants[0], len(wins), variants))
+
+    outputs = sentiment_model(all_windows, top_k=None)
     results = {}
-    sentences = sent_tokenize(text.lower())
+    idx = 0
+    for entity, count, variants in window_counts:
+        entity_outs = outputs[idx: idx+count]
+        idx += count
 
-    for id, variants in entities.items():
-        entity = variants[0]
-        related_sentences = [s for s in sentences
-                             if any(re.search(rf'\b{re.escape(v)}\b', s, flags=re.IGNORECASE)
-                             for v in variants)]
+        pos = [score for out in entity_outs for score in (e["score"] for e in out if e["label"]=="POSITIVE")]
+        neg = [score for out in entity_outs for score in (e["score"] for e in out if e["label"]=="NEGATIVE")]
 
-        if not related_sentences:
-            continue
+        avg_pos, avg_neg = (np.mean(pos) if pos else 0, np.mean(neg) if neg else 0)
+        if abs(avg_pos-avg_neg) < 0.1:
+            sentiment = "NEUTRAL"
+        else:
+            sentiment = "POSITIVE" if avg_pos>avg_neg else "NEGATIVE"
 
-        chunks = []
-        current = []
-        for s in related_sentences:
-            if len(" ".join(current + [s]).split()) > MAX_MODEL_TOKENS:
-                chunks.append(" ".join(current))
-                current = [s]
-            else:
-                current.append(s)
-        if current:
-            chunks.append(" ".join(current))
+        results[entity] = {
+            "sentiment": sentiment,
+            "score_diff": avg_pos-avg_neg,
+            "mentions": count,
+            "variants": variants
+        }
 
-        sentiments = []
-        for chunk in chunks:
-            try:
-                input_ids = tokenizer.encode(chunk, truncation=True, max_length=MAX_MODEL_TOKENS, return_tensors=None)
-                out = sentiment_model(tokenizer.decode(input_ids, skip_special_tokens=True))
-                sentiments.append(out[0]["label"])
-            except Exception as e:
-                print(f"Error for : '{entity}' : {e}")
-                continue
-
-        if sentiments:
-            count = Counter(sentiments)
-            final_sentiment = count.most_common(1)[0][0]
-            results[entity] = {
-                "sentiment": final_sentiment,
-                "details": count,
-                "chunks_evaluated": len(sentiments),
-                "variants": variants
-            }
 
     return results
+

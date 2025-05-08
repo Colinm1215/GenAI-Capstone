@@ -1,3 +1,4 @@
+import torch
 from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 from nltk.tokenize import sent_tokenize
 import nltk
@@ -9,6 +10,7 @@ nltk.download("punkt_tab", download_dir="/tmp/nltk_data")
 nltk.data.path.append("/tmp/nltk_data")
 
 MAX_MODEL_TOKENS = 512
+device = 0 if torch.cuda.is_available() else -1
 
 model = AutoModelForSeq2SeqLM.from_pretrained("facebook/bart-large-cnn")
 tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large-cnn")
@@ -16,20 +18,22 @@ summarizer_pipeline = pipeline(
     "summarization",
     model=model,
     tokenizer=tokenizer,
-    device=-1
+    device=device
 )
 
 def generate_summary(prompt, max_tokens=MAX_MODEL_TOKENS):
-    token_count = len(prompt.split())
-    safe_max = min(max_tokens, token_count) if token_count < max_tokens else max_tokens
+    tokens = tokenizer(prompt, return_tensors="pt").input_ids[0]
+    input_len = tokens.shape[-1]
+    summary_len = min(int(input_len * 0.6), max_tokens)
+
     result = summarizer_pipeline(
         prompt,
-        max_new_tokens=safe_max,
         do_sample=False,
         num_beams=4,
         no_repeat_ngram_size=3,
         length_penalty=2.0,
-        early_stopping=True
+        early_stopping=True,
+        max_length=summary_len
     )
     return result[0]["summary_text"].strip()
 

@@ -1,4 +1,6 @@
+import os
 import re
+import time
 
 import evaluate
 
@@ -14,13 +16,14 @@ alias_fallback = {
     "klan": "kkk"
 }
 
-
 def clean_entity(entity):
-    entity = entity.lower().strip()
-    entity = re.sub(r"'s$", '', entity)
-    entity = re.sub(r"^the\s+", '', entity)
-    entity = re.sub(r"[^\w\s-]", '', entity)
-    return entity
+    e = entity.lower().strip()
+    e = re.sub(r"'s$", "", e)
+    e = re.sub(r"^the\s+", "", e)
+    e = re.sub(r"\s*\(.*?\)", "", e)
+    e = re.sub(r"[^\w\s-]", "", e)
+    return e
+
 
 def match_entities(pred, ref):
     matched = {}
@@ -67,21 +70,30 @@ def evaluate_summaries(prediction, reference):
 
 
 def evaluate_bias(pred_bias, ref_bias):
-    compiled = []
-    for i in range(len(pred_bias)):
-        tp, fp, matched, unmatched = match_entities(pred_bias[i], ref_bias[i])
-        compiled.append({
-            "Correct Sentiment": tp,
-            "Incorrect Sentiment": fp,
-            "Number of Matched Entities": matched,
-            "Number of Unmatched Entities": unmatched,
-            "Total Entities": matched + unmatched
-        })
-    total_correct = sum(x["Correct Sentiment"] for x in compiled)
-    total_entities = sum(x["Total Entities"] for x in compiled)
-    bias_accuracy = total_correct / max(1, total_entities)
+    total_ref = sum(len(r) for r in ref_bias)
+    correct = 0
+    false_neg = 0
+    for i in range(len(ref_bias)):
+        ref_map = { clean_entity(k): v.lower() for k,v in ref_bias[i].items() }
+        pred_map = {}
+        for raw_ent, data in pred_bias[i].items():
+            key = clean_entity(raw_ent)
+            pred_map[key] = data["sentiment"].lower()
 
-    return bias_accuracy, total_correct, total_entities
+            for var in data.get("variants", []):
+                pred_map[clean_entity(var)] = data["sentiment"].lower()
+
+        for ref_ent_clean, true_sent in ref_map.items():
+            ref_ent_clean = re.sub(r"\s*\(.*?\)", "", ref_ent_clean)
+            pred_sent = pred_map.get(ref_ent_clean)
+            if pred_sent is None:
+                false_neg += 1
+            elif pred_sent == true_sent:
+                correct += 1
+
+    accuracy = correct / total_ref if total_ref else 0
+    return accuracy, correct, total_ref
+
 
 if __name__ == "__main__":
     pred_summaries = []
@@ -141,13 +153,28 @@ if __name__ == "__main__":
 
     files = ["1.txt", "2.txt", "3.txt"]
 
+    summary_times = []
+    sentiment_times = []
+
     for i in range(len(files)):
         file = files[i]
+        path = os.path.join(os.path.dirname(__file__), file)
         with open(file, "r", encoding="utf-8") as f:
             file_text = f.read()
-            pred_summaries.append(summarize_text(file_text))
+            start_time = time.time()
+            summary = summarize_text(file_text)
+            summary_duration = time.time() - start_time
+            summary_times.append(summary_duration)
+
+            pred_summaries.append(summary)
+
+            start_time = time.time()
             bias = analyze_entity_sentiment(file_text)
+            sentiment_duration = time.time() - start_time
+            sentiment_times.append(sentiment_duration)
+
             pred_bias.append(bias)
+
 
     summary_results = evaluate_summaries(pred_summaries, ref_summaries)
     print(f"""
@@ -163,6 +190,13 @@ if __name__ == "__main__":
     Bias Accuracy : {accuracy}
     Matched Entities : {matched}
     Total Entities : {total}
+    """)
+
+    average_summary_inference = sum(summary_times) / len(summary_times)
+    average_sentiment_inference = sum(sentiment_times) / len(sentiment_times)
+    print(f"""
+    Average Inference Times: {average_summary_inference:.2f} seconds for summaries,
+                             {average_sentiment_inference:.2f} seconds for sentiment analysis
     """)
 
 
